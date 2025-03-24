@@ -2,6 +2,27 @@
 
 import { useState } from 'react';
 import { FlowNode, FlowEdge, FlowTableData } from '../types/flow';
+import FlowChart from './FlowChart';
+
+const nodeColors = {
+  start: '#E8F5E9',    // 연한 초록색
+  process: '#E3F2FD',  // 연한 파란색
+  decision: '#FFF8E1', // 연한 노란색
+  end: '#FFEBEE',      // 연한 빨간색
+  document: '#F3E5F5', // 연한 보라색
+  input: '#FFF3E0',    // 연한 주황색
+  output: '#EFEBE9',   // 연한 갈색
+};
+
+const nodeTextColors = {
+  start: '#2E7D32',    // 진한 초록색
+  process: '#1976D2',  // 진한 파란색
+  decision: '#F57F17', // 진한 노란색
+  end: '#D32F2F',      // 진한 빨간색
+  document: '#7B1FA2', // 진한 보라색
+  input: '#E65100',    // 진한 주황색
+  output: '#4E342E',   // 진한 갈색
+};
 
 export default function FlowTable() {
   const [data, setData] = useState<FlowTableData>({
@@ -9,9 +30,11 @@ export default function FlowTable() {
       {
         id: '1',
         type: 'start',
-        lable: '시작',
-        metadata: {},
-        position: { x: 0, y: 0 }
+        label: '시작',
+        position: { x: 0, y: 0 },
+        metadata: {
+          meaning: ''
+        }
       }
     ],
     edges: [],
@@ -22,6 +45,7 @@ export default function FlowTable() {
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [showJsonModal, setShowJsonModal] = useState(false);
+  const [showChartModal, setShowChartModal] = useState(false);
 
   const handleNodeUpdate = (nodeId: string, field: keyof FlowNode, value: any) => {
     setData(prev => ({
@@ -43,18 +67,37 @@ export default function FlowTable() {
 
   const addNode = () => {
     const newId = String(data.nodes.length + 1);
+    const lastNode = data.nodes[data.nodes.length - 1];
+    
+    // 마지막 노드의 위치를 기준으로 새 노드의 위치 계산
+    const newPosition = {
+      x: (lastNode?.position?.x ?? 0) + 250,  // 수평 간격
+      y: (lastNode?.position?.y ?? 0) + 150   // 수직 간격
+    };
+
+    // 시작 노드가 아닌 경우에만 위치 조정
+    if (lastNode?.type !== 'start') {
+      // 마지막 노드의 연결된 노드 수에 따라 위치 조정
+      const connectedNodes = data.edges.filter(edge => 
+        edge.source === lastNode.id || edge.target === lastNode.id
+      ).length;
+
+      newPosition.y += connectedNodes * 100; // 연결된 노드 수에 따라 수직 간격 조정
+    }
+
+    const newNode: FlowNode = {
+      id: newId,
+      type: 'process',
+      label: `노드 ${newId}`,
+      position: newPosition,
+      metadata: {
+        meaning: ''
+      }
+    };
+
     setData(prev => ({
       ...prev,
-      nodes: [
-        ...prev.nodes,
-        {
-          id: newId,
-          type: 'process',
-          lable: `노드 ${newId}`,
-          metadata: {},
-          position: { x: 0, y: 0 }
-        }
-      ]
+      nodes: [...prev.nodes, newNode]
     }));
   };
 
@@ -81,10 +124,10 @@ export default function FlowTable() {
     const outgoingEdges = data.edges.filter(edge => edge.source === nodeId);
     
     return {
-      in: incomingEdges[0]?.source || '',  // 첫 번째 incoming edge의 source ID
-      out: outgoingEdges[0]?.target || '', // 첫 번째 outgoing edge의 target ID
-      inLabel: incomingEdges[0] ? `${data.nodes.find(n => n.id === incomingEdges[0].source)?.lable} (${incomingEdges[0].source})` : '',
-      outLabel: outgoingEdges[0] ? `${data.nodes.find(n => n.id === outgoingEdges[0].target)?.lable} (${outgoingEdges[0].target})` : ''
+      in: incomingEdges[0]?.source || '',
+      out: outgoingEdges[0]?.target || '',
+      inLabel: incomingEdges[0] ? `${data.nodes.find(n => n.id === incomingEdges[0].source)?.label} (${incomingEdges[0].source})` : '',
+      outLabel: outgoingEdges[0] ? `${data.nodes.find(n => n.id === outgoingEdges[0].target)?.label} (${outgoingEdges[0].target})` : ''
     };
   };
 
@@ -127,12 +170,11 @@ export default function FlowTable() {
   };
 
   const getAvailableNodes = (currentNodeId: string, isIncoming: boolean) => {
-    // 현재 노드와 자기 자신을 제외한 모든 노드 반환
     return data.nodes
       .filter(node => node.id !== currentNodeId)
       .map(node => ({
         id: node.id,
-        label: `${node.lable} (${node.id})`
+        label: `${node.label} (${node.id})`
       }));
   };
 
@@ -175,11 +217,61 @@ export default function FlowTable() {
     }));
   };
 
+  const copyToClipboard = (text: string) => {
+    try {
+      // 임시 textarea 엘리먼트 생성
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      
+      // 텍스트 선택
+      textarea.select();
+      textarea.setSelectionRange(0, 99999); // 모바일 지원
+      
+      // 복사 실행
+      document.execCommand('copy');
+      
+      // 임시 엘리먼트 제거
+      document.body.removeChild(textarea);
+      
+      alert('JSON 데이터가 클립보드에 복사되었습니다.');
+    } catch (err) {
+      console.error('클립보드 복사 실패:', err);
+      alert('클립보드 복사에 실패했습니다. JSON 데이터를 직접 복사해주세요.');
+    }
+  };
+
+  const handleNodePositionChange = (nodeId: string, position: { x: number; y: number }) => {
+    if (!position) return;  // position이 undefined인 경우 처리
+
+    setData(prev => ({
+      ...prev,
+      nodes: prev.nodes.map(node => 
+        node.id === nodeId 
+          ? { 
+              ...node, 
+              position: { 
+                x: Math.round(position?.x || 0), 
+                y: Math.round(position?.y || 0) 
+              } 
+            } 
+          : node
+      )
+    }));
+  };
+
   return (
     <div className="p-4 max-w-6xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-gray-900">플로우차트 테이블</h2>
         <div className="flex gap-4">
+          <button 
+            onClick={() => setShowChartModal(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 shadow-sm flex items-center gap-2 text-base font-medium"
+          >
+            <span>📊</span>
+            <span>플로우차트 보기</span>
+          </button>
           <button 
             onClick={() => setShowJsonModal(true)}
             className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 shadow-sm flex items-center gap-2 text-base font-medium"
@@ -206,6 +298,7 @@ export default function FlowTable() {
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900 uppercase tracking-wider border-b">도형 안 텍스트</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900 uppercase tracking-wider border-b">In</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900 uppercase tracking-wider border-b">Out</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900 uppercase tracking-wider border-b">위치</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -251,8 +344,8 @@ export default function FlowTable() {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <input
                       type="text"
-                      value={node.lable}
-                      onChange={(e) => handleNodeUpdate(node.id, 'lable', e.target.value)}
+                      value={node.label}
+                      onChange={(e) => handleNodeUpdate(node.id, 'label', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-base text-gray-900"
                     />
                   </td>
@@ -313,6 +406,31 @@ export default function FlowTable() {
                       )}
                     </div>
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={node.position?.x ?? 0}
+                        onChange={(e) => handleNodeUpdate(node.id, 'position', {
+                          ...(node.position || { x: 0, y: 0 }),
+                          x: parseInt(e.target.value) || 0
+                        })}
+                        className="w-20 px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-base text-gray-900"
+                        placeholder="X"
+                      />
+                      <span className="text-gray-500">,</span>
+                      <input
+                        type="number"
+                        value={node.position?.y ?? 0}
+                        onChange={(e) => handleNodeUpdate(node.id, 'position', {
+                          ...(node.position || { x: 0, y: 0 }),
+                          y: parseInt(e.target.value) || 0
+                        })}
+                        className="w-20 px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-base text-gray-900"
+                        placeholder="Y"
+                      />
+                    </div>
+                  </td>
                 </tr>
               );
             })}
@@ -338,16 +456,44 @@ export default function FlowTable() {
             </pre>
             <div className="mt-4 flex justify-end gap-2">
               <button
-                onClick={() => {
-                  navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-                  alert('JSON 데이터가 클립보드에 복사되었습니다.');
-                }}
+                onClick={() => copyToClipboard(JSON.stringify(data, null, 2))}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
               >
                 클립보드에 복사
               </button>
               <button
                 onClick={() => setShowJsonModal(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 플로우차트 모달 */}
+      {showChartModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-[90vw] h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-gray-900">플로우차트</h3>
+              <button
+                onClick={() => setShowChartModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1">
+              <FlowChart 
+                data={data} 
+                onNodePositionChange={handleNodePositionChange}
+              />
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setShowChartModal(false)}
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200"
               >
                 닫기
